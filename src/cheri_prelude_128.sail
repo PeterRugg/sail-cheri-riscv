@@ -45,14 +45,16 @@ type uperms_width : Int = 4
 let uperms_width = sizeof(uperms_width)
 type cap_addr_width : Int = xlen
 let  cap_addr_width = sizeof(cap_addr_width)
-type cap_len_width : Int = cap_addr_width + 1
-let  cap_len_width  = sizeof(cap_len_width)
 type mantissa_width : Int = 14
 let  mantissa_width = sizeof(mantissa_width)
+type exp_width : Int = 6
+let  exp_width = sizeof(exp_width)
+type cap_len_width : Int = cap_addr_width + 2
+let  cap_len_width  = sizeof(cap_len_width)
 
 let MAX_ADDR = MAX(cap_addr_width)
-type CapAddrInt = range(0, (2 ^ 64) - 1) /* XXX should be cap_addr_width */
-type CapLen = range(0, 2 ^ 65) /* XXX sail can't handle if this is expressed as cap_len_width */
+type CapAddrInt = range(0, (2 ^ cap_addr_width) - 1)
+type CapLen = range(0, (2 ^ cap_len_width) - 1)
 
 /* A partially decompressed version of a capability -- E, B, T,
  * lenMSB, sealed and otype fields are not present in all formats and are
@@ -76,7 +78,7 @@ struct Capability = {
   reserved               : bits(2) ,
   flag_cap_mode          : bool    ,
   internal_e             : bool    ,
-  E                      : bits(6) ,
+  E                      : bits(exp_width),
   sealed                 : bool    ,
   B                      : bits(mantissa_width),
   T                      : bits(mantissa_width),
@@ -87,7 +89,7 @@ struct Capability = {
 /* Reset E and T calculated to make top 2**64. */
 let maxE = 52
 let internal_exponent_take_bits = 3
-let resetE = to_bits(6, maxE)
+let resetE = to_bits(exp_width, maxE)
 let resetT = 0b01 @ 0x000 /* bit 12 set */
 
 let null_cap : Capability = struct {
