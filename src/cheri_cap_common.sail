@@ -309,14 +309,15 @@ overload operator << = {sail_shiftleft}
 overload operator >>_s = {sail_arith_shiftright}
 
 function fastRepCheck(c, i) : (Capability, CapAddrBits) -> bool=
-    let E = unsigned(c.E) in
+    let c_legal = getCapLegalised(c) in
+    let E = unsigned(c_legal.E) in
     if (E >= maxE - 2) then
         true /* in this case representable region is whole address space */
     else
         let i_top    = signed(i >>_s (E + mantissa_width)) in
         let i_mid    = truncate(i >> E, mantissa_width)in
-        let a_mid    = truncate(c.address >> E, mantissa_width) in
-        let B3 = truncateLSB(c.B, 3) in
+        let a_mid    = truncate(c_legal.address >> E, mantissa_width) in
+        let B3 = truncateLSB(c_legal.B, 3) in
         let R3 = B3 - 0b001 in
         let R  = R3 @ zeros(mantissa_width - 3) in
         let diff  = R - a_mid in
