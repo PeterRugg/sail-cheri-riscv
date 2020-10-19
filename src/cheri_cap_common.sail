@@ -245,7 +245,7 @@ function getCapLegalised(c) : Capability -> Capability =
     c
   else
     /* Legalise the capability by zeroing the ie bit, implicitly setting E to 0. TODO avoid 90 magic number */
-    capBitsToCapability(false, capToBits(c) & ~(to_bits(128, 1) << 90))
+    encCapabilityToCapability(false, {capToEncCap(c) with internal_e = bitzero})
 
 function getCapBoundsBits(c) : Capability -> (CapAddrBits, CapLenBits) =
   let c_legal = getCapLegalised(c) in
