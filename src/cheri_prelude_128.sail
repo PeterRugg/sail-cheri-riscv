@@ -34,15 +34,15 @@
 
 /* width of capability in bytes (excluding tag) */
 type cap_size : Int = 16
-let cap_size = sizeof(cap_size)
+let  cap_size = sizeof(cap_size)
 type log2_cap_size : Int = 4
-let log2_cap_size = sizeof(log2_cap_size)
+let  log2_cap_size = sizeof(log2_cap_size)
 type CapBits = bits(8 * cap_size)
 /* width of otype field in bits */
 type otype_width : Int = 18
-let otype_width = sizeof(otype_width)
+let  otype_width = sizeof(otype_width)
 type uperms_width : Int = 4
-let uperms_width = sizeof(uperms_width)
+let  uperms_width = sizeof(uperms_width)
 type cap_addr_width : Int = xlen
 let  cap_addr_width = sizeof(cap_addr_width)
 type mantissa_width : Int = 14
@@ -51,151 +51,45 @@ type exp_width : Int = 6
 let  exp_width = sizeof(exp_width)
 type cap_len_width : Int = cap_addr_width + 2
 let  cap_len_width  = sizeof(cap_len_width)
-
-let MAX_ADDR = MAX(cap_addr_width)
-type CapAddrInt = range(0, (2 ^ cap_addr_width) - 1)
-type CapLen = range(0, (2 ^ cap_len_width) - 1)
-
-/* A partially decompressed version of a capability -- E, B, T,
- * lenMSB, sealed and otype fields are not present in all formats and are
- * populated by capBitsToCapability.
- */
-struct Capability = {
-  tag                    : bool    ,
-  uperms                 : bits(uperms_width) ,
-  permit_set_CID         : bool    ,
-  access_system_regs     : bool    ,
-  permit_unseal          : bool    ,
-  permit_cinvoke         : bool    ,
-  permit_seal            : bool    ,
-  permit_store_local_cap : bool    ,
-  permit_store_cap       : bool    ,
-  permit_load_cap        : bool    ,
-  permit_store           : bool    ,
-  permit_load            : bool    ,
-  permit_execute         : bool    ,
-  global                 : bool    ,
-  reserved               : bits(2) ,
-  flag_cap_mode          : bool    ,
-  internal_e             : bool    ,
-  E                      : bits(exp_width),
-  sealed                 : bool    ,
-  B                      : bits(mantissa_width),
-  T                      : bits(mantissa_width),
-  otype                  : bits(otype_width),
-  address                : bits(cap_addr_width)
-}
+type reserved_width : Int = 2
+let  reserved_width = sizeof(reserved_width)
 
 /* Reset E and T calculated to make top 2**64. */
-let maxE = 52
-let internal_exponent_take_bits = 3
-let resetE = to_bits(exp_width, maxE)
-let resetT = 0b01 @ 0x000 /* bit 12 set */
+let  maxE = 52
+type internal_exponent_take_bits : Int = 3
+let  internal_exponent_take_bits = sizeof(internal_exponent_take_bits)
+let  resetE = to_bits(exp_width, maxE)
+let  resetT = 0b01 @ 0x000 /* bit 12 set */
 
-let null_cap : Capability = struct {
-  tag                    = false,
-  uperms                 = zeros(),
-  permit_set_CID         = false,
-  access_system_regs     = false,
-  permit_unseal          = false,
-  permit_cinvoke         = false,
-  permit_seal            = false,
-  permit_store_local_cap = false,
-  permit_store_cap       = false,
-  permit_load_cap        = false,
-  permit_store           = false,
-  permit_load            = false,
-  permit_execute         = false,
-  global                 = false,
-  reserved               = zeros(),
-  flag_cap_mode          = false,
-  internal_e             = true,
-  E                      = resetE,
-  sealed                 = false,
-  B                      = zeros(),
-  T                      = resetT,
-  otype                  = to_bits(otype_width, otype_unsealed),
-  address                = zeros()
+/* Capability format completely compressed. Tag is out of band */
+struct EncCapability = {
+  perms      : bits(uperms_width + 12) ,
+  otype      : bits(otype_width) ,
+  reserved   : bits(reserved_width) ,
+  flags      : bits(1) ,
+  internal_e : bit ,
+  T          : bits(mantissa_width - 2) ,
+  B          : bits(mantissa_width) ,
+  address    : bits(cap_addr_width)
 }
 
-let default_cap : Capability = struct {
-  tag                    = true,
-  uperms                 = ones(),
-  permit_set_CID         = true,
-  access_system_regs     = true,
-  permit_unseal          = true,
-  permit_cinvoke         = true,
-  permit_seal            = true,
-  permit_store_local_cap = true,
-  permit_store_cap       = true,
-  permit_load_cap        = true,
-  permit_store           = true,
-  permit_load            = true,
-  permit_execute         = true,
-  global                 = true,
-  reserved               = zeros(),
-  flag_cap_mode          = false,
-  internal_e             = true,
-  E                      = resetE,
-  sealed                 = false,
-  B                      = zeros(),
-  T                      = resetT,
-  otype                  = to_bits(otype_width, otype_unsealed),
-  address                = zeros()
+function capBitsToEncCapability(c) : CapBits -> EncCapability = struct {
+  perms      = c[127..112],
+  reserved   = c[111..110],
+  flags      = c[109..109],
+  otype      = c[108..91],
+  internal_e = c[90],
+  T          = c[89..78],
+  B          = c[77..64],
+  address    = c[63..0]
 }
 
-/* Convert from capabilty bits (128 bits with tag) to a more convenient struct. */
-function capBitsToCapability(t, c) : (bool, CapBits) -> Capability = {
-  internal_exponent : bool = bit_to_bool(c[90]);
-  otype : bits(18) = c[108..91];
-  let sealed : bool = otype != to_bits(otype_width, otype_unsealed);
-  E : bits(6)  = zeros();
-  Bs : bits(14) = zeros();
-  T : bits(12) = zeros();
-  lenMSBs : bits(2) = zeros();
-  if internal_exponent then {
-    /* Exponent stored instead of T[2..0] and B[2..0] */
-    E = c[80..78] @ c [66..64];
-    /* Exponent chosen so that length MSBs is 01 */
-    lenMSBs = 0b01;
-    T = c[89..81] @ 0b000;
-    Bs = c[77..67] @ 0b000;
-  } else {
-    /* Exponent zero */
-    lenMSBs = 0b00;
-    T = c[89..78];
-    Bs = c[77..64];
-  };
-  /* Reconstruct top two bits of T given T = B + len and:
-   * 1) the top two bits of B
-   * 2) most significant two bits of length derived from format above
-   * 3) carry out of B[20..0] + len[20..0] that is implied if T[20..0] < B[20..0]
-   */
-  carry_out = if T <_u Bs[11..0] then 0b01 else 0b00;
-  Ttop2 = Bs[13..12] + lenMSBs + carry_out;
-  return struct {
-    tag                    = t,
-    uperms                 = c[127..124],
-    permit_set_CID         = bit_to_bool(c[123]),
-    access_system_regs     = bit_to_bool(c[122]),
-    permit_unseal          = bit_to_bool(c[121]),
-    permit_cinvoke         = bit_to_bool(c[120]),
-    permit_seal            = bit_to_bool(c[119]),
-    permit_store_local_cap = bit_to_bool(c[118]),
-    permit_store_cap       = bit_to_bool(c[117]),
-    permit_load_cap        = bit_to_bool(c[116]),
-    permit_store           = bit_to_bool(c[115]),
-    permit_load            = bit_to_bool(c[114]),
-    permit_execute         = bit_to_bool(c[113]),
-    global                 = bit_to_bool(c[112]),
-    reserved               = c[111..110],
-    flag_cap_mode          = bit_to_bool(c[109]),
-    internal_e             = internal_exponent,
-    E                      = E,
-    sealed                 = sealed,
-    B                      = Bs,
-    T                      = Ttop2 @ T,
-    otype                  = otype,
-    address                = c[63..0]
-  }
-}
+function EncCapToBits(cap) : EncCapability -> CapBits =
+  cap.perms @
+  cap.reserved @
+  cap.flags @
+  cap.otype @
+  [cap.internal_e] @
+  cap.T @
+  cap.B @
+  cap.address
